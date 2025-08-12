@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual envs
+.venv/
+venv/
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Project artifacts
+output/
+models/*.pt
+input/*.pdf
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Logs
+*.log
+

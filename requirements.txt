@@ -1,0 +1,11 @@
+ultralytics
+PyMuPDF
+opencv-python
+pillow
+pytesseract
+torch
+transformers
+sentencepiece
+accelerate
+numpy
+streamlit
