@@ -14,6 +14,8 @@ from transformers import pipeline
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+import threading
+from collections import defaultdict
 
 from config import *
 
@@ -32,6 +34,16 @@ class NewspaperEducationExtractor:
         logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
         self.logger = logging.getLogger(__name__)
         
+        # Make OpenCV more stable in multi-threaded apps
+        try:
+            cv2.setNumThreads(1)
+        except Exception:
+            pass
+        try:
+            cv2.ocl.setUseOpenCL(False)
+        except Exception:
+            pass
+
         # Runtime settings (with config fallbacks)
         self.keyword_min_match = (
             min_keyword_matches if min_keyword_matches is not None else KEYWORD_MIN_MATCH
@@ -40,7 +52,13 @@ class NewspaperEducationExtractor:
             confidence_threshold if confidence_threshold is not None else CONFIDENCE_THRESHOLD
         )
         self.num_workers = num_workers if num_workers is not None else NUM_WORKERS
+        # Streamlit can be unstable with thread pools; force single worker in that context
+        in_streamlit = bool(os.environ.get("STREAMLIT_SERVER_PORT") or os.environ.get("STREAMLIT_RUNTIME"))
+        # Use single-threaded mode under Streamlit to avoid bus errors
+        self._effective_workers = 1 if in_streamlit else 1
         self.save_crops = save_crops
+        self._ocr_lock = threading.Lock()
+        self._summ_lock = threading.Lock()
 
         # Load YOLOv8 model
         if not MODEL_PATH.exists():
@@ -64,7 +82,11 @@ class NewspaperEducationExtractor:
             self.logger.warning("Summarization model failed to load, using simple truncation")
             self.summarizer = None
         
+        # (Removed zero-shot classifier initialization)
+
         self.logger.info("Extractor initialized successfully")
+
+        # (Removed semantic TF-IDF init)
 
     def pdf_to_images(self, pdf_path: str, dpi: int = 300) -> List[str]:
         """Convert PDF pages to images"""
@@ -140,8 +162,81 @@ class NewspaperEducationExtractor:
         opened = cv2.morphologyEx(thr, cv2.MORPH_OPEN, kernel)
         return opened
 
+    def _reconstruct_reading_order(self, crop_bgr: np.ndarray) -> str:
+        """Reconstruct proper reading order from OCR data"""
+        try:
+            # Get detailed OCR data with bounding boxes
+            ocr_data = pytesseract.image_to_data(
+                crop_bgr, 
+                config=f"--oem 3 --psm 6 -l {OCR_LANG}",
+                output_type=pytesseract.Output.DICT
+            )
+            
+            # Group words by block, paragraph, and line
+            blocks = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+            
+            for i in range(len(ocr_data['text'])):
+                if int(ocr_data['conf'][i]) > 30:  # Filter low confidence
+                    text = ocr_data['text'][i].strip()
+                    if text:
+                        block_num = ocr_data['block_num'][i]
+                        par_num = ocr_data['par_num'][i]
+                        line_num = ocr_data['line_num'][i]
+                        x = ocr_data['left'][i]
+                        y = ocr_data['top'][i]
+                        
+                        blocks[block_num][par_num][line_num].append({
+                            'text': text,
+                            'x': x,
+                            'y': y,
+                            'width': ocr_data['width'][i],
+                            'height': ocr_data['height'][i]
+                        })
+            
+            # Reconstruct text in reading order
+            reconstructed_text = []
+            
+            # Sort blocks by vertical position (top to bottom)
+            sorted_blocks = sorted(blocks.items(), key=lambda x: min(word['y'] for words in x[1].values() for word in words))
+            
+            for block_num, paragraphs in sorted_blocks:
+                # Sort paragraphs by vertical position
+                sorted_paragraphs = sorted(paragraphs.items(), key=lambda x: min(word['y'] for words in x[1].values() for word in words))
+                
+                for par_num, lines in sorted_paragraphs:
+                    # Sort lines by vertical position
+                    sorted_lines = sorted(lines.items(), key=lambda x: min(word['y'] for word in x[1]))
+                    
+                    for line_num, words in sorted_lines:
+                        # Sort words by horizontal position (left to right)
+                        sorted_words = sorted(words, key=lambda x: x['x'])
+                        
+                        # Join words in line
+                        line_text = ' '.join(word['text'] for word in sorted_words)
+                        if line_text.strip():
+                            reconstructed_text.append(line_text)
+                    
+                    # Add paragraph break
+                    if reconstructed_text and not reconstructed_text[-1].endswith('\n'):
+                        reconstructed_text.append('')
+            
+            # Join all text
+            final_text = '\n'.join(reconstructed_text)
+            
+            # Clean up text
+            final_text = re.sub(r'\n\s*\n', '\n\n', final_text)  # Remove excessive line breaks
+            final_text = re.sub(r'\s+', ' ', final_text)  # Normalize whitespace
+            final_text = final_text.strip()
+            
+            return final_text
+            
+        except Exception as e:
+            self.logger.warning(f"Reading order reconstruction failed: {e}")
+            # Fallback to simple OCR
+            return pytesseract.image_to_string(crop_bgr, config=f"--oem 3 --psm 6 -l {OCR_LANG}")
+
     def extract_article_crop_and_text(self, article_data: Dict) -> Tuple[str, str]:
-        """Extract article crop and perform OCR"""
+        """Extract article crop and perform OCR with reading order reconstruction"""
         # Load image and pad bbox
         img = cv2.imread(article_data['image_path'])
         x1, y1, x2, y2 = self._pad_bbox(article_data['bbox'], img.shape)
@@ -157,27 +252,52 @@ class NewspaperEducationExtractor:
             cv2.imwrite(str(crop_path), crop)
             crop_path_str = str(crop_path)
         
-        # OCR extraction with preprocessing and fallback PSM
+        # Try reading order reconstruction first, fallback to simple OCR
         try:
             pre = self._preprocess_for_ocr(crop)
-            ocr_config = f"--oem 3 --psm {OCR_PSM_PRIMARY} -l {OCR_LANG}"
-            text = pytesseract.image_to_string(pre, config=ocr_config)
+            
+            # Try reading order reconstruction
+            if 'OCR_THREAD_SAFE' in globals() and OCR_THREAD_SAFE:
+                with self._ocr_lock:
+                    text = self._reconstruct_reading_order(pre)
+            else:
+                text = self._reconstruct_reading_order(pre)
+            
+            # If reconstruction produced too little text, try simple OCR
             if len(text.strip()) < 30:
-                # fallback to a different PSM
-                ocr_config_fb = f"--oem 3 --psm {OCR_PSM_FALLBACK} -l {OCR_LANG}"
-                text = pytesseract.image_to_string(pre, config=ocr_config_fb)
+                ocr_config = f"--oem 3 --psm {OCR_PSM_PRIMARY} -l {OCR_LANG}"
+                if 'OCR_THREAD_SAFE' in globals() and OCR_THREAD_SAFE:
+                    with self._ocr_lock:
+                        text = pytesseract.image_to_string(pre, config=ocr_config)
+                else:
+                    text = pytesseract.image_to_string(pre, config=ocr_config)
+                
+                # Fallback to different PSM if still too little text
+                if len(text.strip()) < 30:
+                    ocr_config_fb = f"--oem 3 --psm {OCR_PSM_FALLBACK} -l {OCR_LANG}"
+                    if 'OCR_THREAD_SAFE' in globals() and OCR_THREAD_SAFE:
+                        with self._ocr_lock:
+                            text = pytesseract.image_to_string(pre, config=ocr_config_fb)
+                    else:
+                        text = pytesseract.image_to_string(pre, config=ocr_config_fb)
+            
             text = re.sub(r'\s+', ' ', text).strip()
             return crop_path_str, text
+            
         except Exception as e:
             self.logger.error(f"OCR error: {e}")
             return crop_path_str, ""
 
     def contains_education_keywords(self, text: str, min_keywords: int = 2) -> Tuple[bool, List[str]]:
-        """Check if text contains education-related keywords"""
+        """Check if text contains education-related keywords (simple keyword count)"""
         text_lower = text.lower()
         found_keywords = [kw for kw in EDUCATION_KEYWORDS if kw in text_lower]
         is_education = len(found_keywords) >= min_keywords
         return is_education, found_keywords
+
+    # (Removed zero-shot semantic filter)
+
+    # (Removed TF-IDF semantic function)
 
     def summarize_text(self, text: str) -> str:
         """Summarize text using local model"""
@@ -187,12 +307,13 @@ class NewspaperEducationExtractor:
         if self.summarizer:
             try:
                 # Summarize a limited input length for performance
-                summary = self.summarizer(
-                    text[:MAX_INPUT_CHARS_FOR_SUMMARY],
-                    max_length=MAX_SUMMARY_LENGTH,
-                    min_length=30,
-                    do_sample=False
-                )
+                with self._summ_lock:
+                    summary = self.summarizer(
+                        text[:MAX_INPUT_CHARS_FOR_SUMMARY],
+                        max_length=MAX_SUMMARY_LENGTH,
+                        min_length=30,
+                        do_sample=False
+                    )
                 return summary[0]['summary_text']
             except Exception as e:
                 self.logger.error(f"Summarization error: {e}")
@@ -211,6 +332,7 @@ class NewspaperEducationExtractor:
         is_education, keywords = self.contains_education_keywords(text, self.keyword_min_match)
         if not is_education:
             return None
+        # (Semantic confirmations removed)
         summary = self.summarize_text(text)
         return {
             'page': page_num,
@@ -249,7 +371,7 @@ class NewspaperEducationExtractor:
             
             # Process articles in parallel
             if articles:
-                with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                with ThreadPoolExecutor(max_workers=self._effective_workers) as executor:
                     future_to_idx = {
                         executor.submit(self._process_single_article, article, page_num): idx
                         for idx, article in enumerate(articles)

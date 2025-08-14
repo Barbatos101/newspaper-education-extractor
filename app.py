@@ -5,6 +5,7 @@ import json
 import streamlit as st
 
 from extractor import NewspaperEducationExtractor
+from config import CONFIDENCE_THRESHOLD, KEYWORD_MIN_MATCH, NUM_WORKERS
 
 
 st.set_page_config(page_title="Newspaper Education Extractor", layout="wide")
@@ -12,20 +13,12 @@ st.title("Newspaper Education Extractor")
 st.caption("Upload a newspaper PDF to detect, OCR, and summarize education-related articles.")
 
 
-@st.cache_resource(show_spinner=False)
-def get_extractor():
-    # Keep current LLM settings unchanged (uses config defaults)
-    return NewspaperEducationExtractor()
-
-
 def main():
-    extractor = get_extractor()
-
     with st.sidebar:
         st.header("Settings")
-        conf_threshold = st.slider("YOLO confidence threshold", 0.3, 0.95, value=extractor.confidence_threshold, step=0.01)
-        min_keywords = st.slider("Min education keywords", 1, 5, value=extractor.keyword_min_match, step=1)
-        workers = st.slider("Workers", 1, 12, value=extractor.num_workers, step=1)
+        conf_threshold = st.slider("YOLO confidence threshold", 0.3, 0.95, value=float(CONFIDENCE_THRESHOLD), step=0.01)
+        min_keywords = st.slider("Min education keywords", 1, 5, value=int(KEYWORD_MIN_MATCH), step=1)
+        workers = st.slider("Workers", 1, 12, value=int(NUM_WORKERS), step=1)
         save_crops = st.checkbox("Save cropped images", value=False)
         run_button = st.button("Run Extraction", type="primary")
 
@@ -41,7 +34,7 @@ def main():
             tmp.write(uploaded_pdf.read())
             tmp_path = tmp.name
 
-        # Recreate extractor with UI overrides but same LLM model
+        # Create extractor once with UI overrides
         extractor = NewspaperEducationExtractor(
             min_keyword_matches=min_keywords,
             confidence_threshold=conf_threshold,

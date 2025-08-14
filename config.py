@@ -35,10 +35,13 @@ OCR_PSM_FALLBACK = 4
 BBOX_PADDING_PCT = 0.03  # expand bbox by 3% on each side before OCR
 
 # Concurrency
-NUM_WORKERS = 4
+NUM_WORKERS = 4  # overall per-page parallelism
+OCR_THREAD_SAFE = True  # serialize Tesseract calls to avoid crashes
 
 # LLM/Summarization settings
 # Default to a lighter summarization model for speed and memory; can be overridden via CLI
 SUMMARIZATION_MODEL = "sshleifer/distilbart-cnn-12-6"
 MAX_SUMMARY_LENGTH = 150
 MAX_INPUT_CHARS_FOR_SUMMARY = 2000
+
+# (Semantic capabilities removed per request)
