@@ -4,9 +4,16 @@ opencv-python
 pillow
 pytesseract
 torch
+torchvision
+torchaudio
 transformers
 sentencepiece
 accelerate
 numpy
 streamlit
 scikit-learn
+sentence-transformers
+psutil
+PyYAML
+easyocr
+python-Levenshtein

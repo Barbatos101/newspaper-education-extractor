@@ -15,8 +15,9 @@ newspaper-env/
 
 # Project artifacts
 output/
-models/*.pt
-input/*.pdf
+# Track model weights and sample PDFs (remove ignores)
+# models/*.pt
+# input/*.pdf
 
 # Notebooks
 .ipynb_checkpoints/
