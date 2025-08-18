@@ -1,4 +1,8 @@
 from pathlib import Path
+import os
+
+# Set tokenizers parallelism to false to prevent fork warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent
@@ -13,14 +17,18 @@ for dir_path in [OUTPUT_DIR / "images", OUTPUT_DIR / "crops", OUTPUT_DIR / "resu
 # Detection settings
 CONFIDENCE_THRESHOLD = 0.68
 
-# Education keywords for filtering
+# Refined education keywords - strictly school/education focused
 EDUCATION_KEYWORDS = [
-    'school', 'schools', 'education', 'educational', 'student', 'students',
-    'teacher', 'teachers', 'university', 'college', 'academic', 'learning',
-    'classroom', 'curriculum', 'exam', 'exams', 'graduation', 'degree',
-    'tuition', 'scholarship', 'principal', 'kindergarten', 'elementary',
-    'secondary', 'admission', 'enrollment', 'faculty', 'campus', 'study',
-    'studies', 'homework', 'textbook', 'library', 'semester', 'grade'
+    'school', 'schools', 'education', 'educational',
+    'student', 'students', 'teacher', 'teachers',
+    'university', 'college', 'academic', 'classroom',
+    'curriculum', 'exam', 'exams', 'graduation',
+    'scholarship', 'principal', 'kindergarten', 'elementary',
+    'secondary', 'admission', 'enrollment', 'faculty', 'campus',
+    'homework', 'textbook', 'library', 'semester', 'grade',
+    'syllabus', 'tuition', 'institute', 'staff', 'board',
+    'classroom', 'lesson', 'lessons', 'instructor', 'pupil',
+    'pupils', 'academy', 'preschool', 'high school', 'primary'
 ]
 
 # Filtering settings
@@ -32,16 +40,22 @@ OCR_PSM_PRIMARY = 6
 OCR_PSM_FALLBACK = 4
 
 # Detection/Extraction tweaks
-BBOX_PADDING_PCT = 0.03  # expand bbox by 3% on each side before OCR
+BBOX_PADDING_PCT = 0.03
 
-# Concurrency
-NUM_WORKERS = 4  # overall per-page parallelism
-OCR_THREAD_SAFE = True  # serialize Tesseract calls to avoid crashes
+# Concurrency - optimized for speed
+import platform
+if platform.machine() == 'arm64':  # Apple Silicon
+    NUM_WORKERS = 4
+else:
+    NUM_WORKERS = min(6, os.cpu_count())
 
-# LLM/Summarization settings
-# Default to a lighter summarization model for speed and memory; can be overridden via CLI
+OCR_THREAD_SAFE = True
+
+# LLM/Summarization settings - using specified model
 SUMMARIZATION_MODEL = "sshleifer/distilbart-cnn-12-6"
-MAX_SUMMARY_LENGTH = 150
-MAX_INPUT_CHARS_FOR_SUMMARY = 2000
+MAX_SUMMARY_LENGTH = 120
+MAX_INPUT_CHARS_FOR_SUMMARY = 1800
 
-# (Semantic capabilities removed per request)
+# Speed optimization settings
+REDUCED_DPI = 220  # Balanced quality/speed
+SEMANTIC_THRESHOLD = 0.35  # Threshold for semantic similarity

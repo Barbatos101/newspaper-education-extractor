@@ -3,15 +3,21 @@
 Newspaper Education Article Extractor - Main Entry Point
 """
 
+import os
 import sys
 import argparse
 from pathlib import Path
+
+# Set tokenizers parallelism to false to avoid deadlocks when forking
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from extractor import NewspaperEducationExtractor
+
 
 def main():
     """Main execution function"""
     parser = argparse.ArgumentParser(
-        description='Extract and summarize education articles from newspaper PDFs'
+        description='Extract and summarize education articles from newspaper PDFs (Optimized)'
     )
     parser.add_argument(
         'pdf_path', 
@@ -31,11 +37,15 @@ def main():
     )
     parser.add_argument(
         '--workers', type=int, default=None,
-        help='Number of worker processes for parallel OCR/summarization (overrides config)'
+        help='Number of worker threads for parallel processing (overrides config)'
     )
     parser.add_argument(
         '--save-crops', action='store_true',
         help='Persist cropped article images to disk (default: False)'
+    )
+    parser.add_argument(
+        '--fast-mode', action='store_true',
+        help='Enable fast processing mode (sacrifices some accuracy for speed)'
     )
     
     args = parser.parse_args()
@@ -48,7 +58,7 @@ def main():
     
     try:
         # Initialize extractor
-        print("Initializing Newspaper Education Extractor...")
+        print("Initializing Optimized Newspaper Education Extractor...")
         extractor = NewspaperEducationExtractor(
             min_keyword_matches=args.min_keywords,
             confidence_threshold=args.conf_threshold,
@@ -59,6 +69,9 @@ def main():
         
         # Process the newspaper
         print(f"Processing: {pdf_path}")
+        if args.fast_mode:
+            print("Fast mode enabled - optimizing for speed")
+        
         results = extractor.process_newspaper(str(pdf_path))
         
         # Display results
@@ -71,6 +84,7 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
