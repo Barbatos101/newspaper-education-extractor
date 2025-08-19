@@ -15,7 +15,7 @@ for dir_path in [OUTPUT_DIR / "images", OUTPUT_DIR / "crops", OUTPUT_DIR / "resu
     dir_path.mkdir(parents=True, exist_ok=True)
 
 # Detection settings
-CONFIDENCE_THRESHOLD = 0.68
+CONFIDENCE_THRESHOLD = 0.78
 
 # Refined education keywords - strictly school/education focused
 EDUCATION_KEYWORDS = [
