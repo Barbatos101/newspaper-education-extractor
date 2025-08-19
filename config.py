@@ -6,7 +6,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent
-MODEL_PATH = PROJECT_ROOT / "models" / "best.pt"
+MODEL_PATH = PROJECT_ROOT / "models" / "bestmodel.pt"
 INPUT_DIR = PROJECT_ROOT / "input"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 

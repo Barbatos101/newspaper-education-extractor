@@ -66,22 +66,16 @@ def main():
             st.subheader(f"Education Articles ({len(articles)} found)")
             
             # Filtering options
-            col1, col2 = st.columns(2)
-            with col1:
-                keyword_filter = st.selectbox(
-                    "Filter by keyword:",
-                    ["All"] + sorted(set(kw for article in articles for kw in article.get('keywords_found', []))),
-                    index=0
-                )
-            with col2:
-                min_confidence = st.slider("Minimum confidence", 0.0, 1.0, 0.0, 0.05)
+            keyword_filter = st.selectbox(
+                "Filter by keyword:",
+                ["All"] + sorted(set(kw for article in articles for kw in article.get('keywords_found', []))),
+                index=0
+            )
             
             # Apply filters
             filtered_articles = articles
             if keyword_filter != "All":
                 filtered_articles = [a for a in articles if keyword_filter in a.get('keywords_found', [])]
-            if min_confidence > 0:
-                filtered_articles = [a for a in articles if a.get('confidence', 0) >= min_confidence]
             
             for i, article in enumerate(filtered_articles, 1):
                 with st.expander(f"{i}. Page {article['page']} • Article {article['article_id']} • conf={article['confidence']:.2f}"):
