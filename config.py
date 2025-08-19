@@ -10,6 +10,13 @@ MODEL_PATH = PROJECT_ROOT / "models" / "bestmodel.pt"
 INPUT_DIR = PROJECT_ROOT / "input"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 
+# Cloud Run optimizations
+NUM_WORKERS = int(os.getenv('NUM_WORKERS', '1'))
+REDUCED_DPI = int(os.getenv('REDUCED_DPI', '150'))
+CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.78'))
+MAX_INPUT_CHARS_FOR_SUMMARY = int(os.getenv('MAX_SUMMARY_CHARS', '900'))
+KEYWORD_MIN_MATCH = int(os.getenv('KEYWORD_MIN_MATCH', '2'))
+
 # Create directories
 for dir_path in [OUTPUT_DIR / "images", OUTPUT_DIR / "crops", OUTPUT_DIR / "results"]:
     dir_path.mkdir(parents=True, exist_ok=True)

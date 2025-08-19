@@ -5,13 +5,16 @@ import os
 
 import streamlit as st
 
+
+st.set_page_config(page_title="Newspaper Education Extractor", layout="wide")
+if "processing" not in st.session_state:
+    st.session_state.processing = False
 # Set environment variables before importing other modules
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from extractor import NewspaperEducationExtractor
 from config import CONFIDENCE_THRESHOLD, KEYWORD_MIN_MATCH, NUM_WORKERS
 
-st.set_page_config(page_title="Newspaper Education Extractor (Semantic)", layout="wide")
 st.title("Newspaper Education Extractor with Semantic Features")
 st.caption("Upload a newspaper PDF to detect, OCR, and summarize education-related articles using semantic analysis and sshleifer/distilbart-cnn-12-6 summarization.")
 
@@ -30,10 +33,13 @@ def main():
 
     uploaded_pdf = st.file_uploader("Upload newspaper PDF", type=["pdf"]) 
 
-    if run_button:
-        if not uploaded_pdf:
-            st.warning("Please upload a PDF first.")
-            st.stop()
+    if run_button and not st.session_state.processing:
+        st.session_state.processing = True
+        
+        with st.spinner("Processing PDF... This may take up to 10 minutes."):
+            results = extractor.process_newspaper(tmp_path)
+        
+        st.session_state.processing = False
 
         # Write to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:

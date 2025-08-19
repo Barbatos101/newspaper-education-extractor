@@ -1,0 +1,11 @@
+services:
+  newspaper-extractor:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+    restart: unless-stopped
+    environment:
+      - TOKENIZERS_PARALLELISM=false
