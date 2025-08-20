@@ -42,21 +42,32 @@ def main():
     # File uploader
     uploaded_pdf = st.file_uploader("Upload newspaper PDF", type=["pdf"], key="pdf_uploader")
 
-    # File size validation
+    # Enhanced file size validation for Cloud Run
     if uploaded_pdf is not None:
         file_size_mb = uploaded_pdf.size / (1024 * 1024)
-        max_size_mb = 50  # 50MB limit for Cloud Run compatibility
+        file_size_bytes = uploaded_pdf.size
         
-        if file_size_mb > max_size_mb:
-            st.error(f"File too large ({file_size_mb:.1f}MB). Please upload a file smaller than {max_size_mb}MB.")
-            st.info("💡 Tip: Try compressing your PDF or splitting large files into smaller ones.")
+        # Cloud Run HTTP/1 limit is 32MB, use 25MB as safe limit
+        max_size_mb = 25
+        max_size_bytes = max_size_mb * 1024 * 1024
+        
+        if file_size_bytes > max_size_bytes:
+            st.error(f"📄 File too large: {file_size_mb:.1f}MB")
+            st.error(f"🚫 Maximum allowed: {max_size_mb}MB (Cloud Run limit)")
+            st.info("💡 **Solutions:**")
+            st.info("• Compress your PDF using online tools")
+            st.info("• Split large PDFs into smaller sections")
+            st.info("• Try PDFs with fewer pages or lower resolution")
             return
+        elif file_size_bytes > 15 * 1024 * 1024:  # 15MB warning
+            st.warning(f"⚠️ Large file ({file_size_mb:.1f}MB) - processing may take longer")
         else:
-            st.success(f"File uploaded successfully ({file_size_mb:.1f}MB)")
-            st.session_state.uploaded_file_name = uploaded_pdf.name
+            st.success(f"✅ File uploaded successfully ({file_size_mb:.1f}MB)")
+        
+        st.session_state.uploaded_file_name = uploaded_pdf.name
 
     # Run extraction button - SIMPLIFIED LOGIC
-    run_extraction = st.button("Run Extraction", type="primary", key="extract_btn")
+    run_extraction = st.button("🚀 Run Extraction", type="primary", key="extract_btn")
 
     # Process when button is clicked - NO ST.RERUN CALLS
     if run_extraction and uploaded_pdf is not None:
@@ -70,13 +81,17 @@ def main():
             tmp_path = tmp.name
 
         # Create extractor
-        with st.spinner("Creating extractor..."):
-            extractor = NewspaperEducationExtractor(
-                min_keyword_matches=min_keywords,
-                confidence_threshold=conf_threshold,
-                num_workers=workers,
-                save_crops=save_crops,
-            )
+        with st.spinner("🔧 Initializing AI models..."):
+            try:
+                extractor = NewspaperEducationExtractor(
+                    min_keyword_matches=min_keywords,
+                    confidence_threshold=conf_threshold,
+                    num_workers=workers,
+                    save_crops=save_crops,
+                )
+            except Exception as e:
+                st.error(f"Failed to initialize extractor: {str(e)}")
+                return
 
         # Processing with progress
         progress_container = st.container()
@@ -85,17 +100,23 @@ def main():
             status_text = st.empty()
             
             try:
-                status_text.text("Starting PDF processing...")
+                status_text.text("📄 Converting PDF to images...")
                 progress_bar.progress(20)
                 
-                status_text.text("Processing PDF with AI models... Please wait.")
-                progress_bar.progress(50)
+                status_text.text("🤖 Running YOLO detection...")
+                progress_bar.progress(40)
+                
+                status_text.text("👁️ Performing OCR on detected articles...")
+                progress_bar.progress(60)
+                
+                status_text.text("🧠 Applying semantic filtering...")
+                progress_bar.progress(80)
                 
                 # Process the PDF
                 results = extractor.process_newspaper(tmp_path)
                 
                 progress_bar.progress(100)
-                status_text.text("Processing complete!")
+                status_text.text("✅ Processing complete!")
                 
                 # Store results in session state
                 st.session_state.results = results
@@ -112,8 +133,13 @@ def main():
                 status_text.empty()
                 
             except Exception as e:
-                st.error(f"Processing failed: {str(e)}")
-                st.info("This might be due to file size or complexity. Try with a smaller PDF.")
+                st.error(f"🚫 Processing failed: {str(e)}")
+                st.info("This might be due to:")
+                st.info("• File complexity or corruption")
+                st.info("• Memory limitations")
+                st.info("• Model loading issues")
+                st.info("Try with a simpler or smaller PDF.")
+                
                 progress_bar.empty()
                 status_text.empty()
                 try:
@@ -128,29 +154,30 @@ def main():
         
         # Display summary
         stats = results.get("processing_stats", {})
-        st.subheader("Processing Summary")
+        st.subheader("📊 Processing Summary")
         summary_cols = st.columns(4)
-        summary_cols[0].metric("Pages processed", stats.get("total_pages", 0))
-        summary_cols.metric("Articles detected", stats.get("total_articles_detected", 0))
-        summary_cols[2].metric("Education articles", stats.get("education_articles_found", 0))
-        summary_cols[3].metric("Semantic enabled", "✅" if results.get("semantic_enabled", False) else "❌")
+        summary_cols[0].metric("📄 Pages", stats.get("total_pages", 0))
+        summary_cols[1].metric("🔍 Detected", stats.get("total_articles_detected", 0))
+        summary_cols[2].metric("🎓 Education", stats.get("education_articles_found", 0))
+        summary_cols[3].metric("🧠 Semantic", "✅" if results.get("semantic_enabled", False) else "❌")
 
         # Show education articles
         articles = results.get("education_articles", [])
         if articles:
-            st.subheader(f"Education Articles ({len(articles)} found)")
+            st.subheader(f"🎓 Education Articles ({len(articles)} found)")
             
             # Filtering options
             filter_col1, filter_col2 = st.columns(2)
             with filter_col1:
+                all_keywords = sorted(set(kw for article in articles for kw in article.get('keywords_found', [])))
                 keyword_filter = st.selectbox(
-                    "Filter by keyword:",
-                    ["All"] + sorted(set(kw for article in articles for kw in article.get('keywords_found', []))),
+                    "🔍 Filter by keyword:",
+                    ["All"] + all_keywords,
                     index=0,
                     key="keyword_filter"
                 )
             with filter_col2:
-                min_confidence = st.slider("Minimum confidence", 0.0, 1.0, 0.0, 0.05, key="conf_filter")
+                min_confidence = st.slider("📊 Minimum confidence", 0.0, 1.0, 0.0, 0.05, key="conf_filter")
             
             # Apply filters
             filtered_articles = articles
@@ -159,44 +186,61 @@ def main():
             if min_confidence > 0:
                 filtered_articles = [a for a in articles if a.get('confidence', 0) >= min_confidence]
             
+            if not filtered_articles:
+                st.info("No articles match your filter criteria. Try adjusting the filters.")
+            
             # Display articles
             for i, article in enumerate(filtered_articles, 1):
-                with st.expander(f"{i}. Page {article['page']} • Article {article['article_id']} • conf={article['confidence']:.2f}"):
+                confidence = article.get('confidence', 0)
+                conf_color = "🟢" if confidence > 0.8 else "🟡" if confidence > 0.6 else "🔴"
+                
+                with st.expander(f"{conf_color} {i}. Page {article['page']} • Article {article['article_id']} • conf={confidence:.2f}"):
                     # Metadata with FIXED column indexing
                     meta_cols = st.columns(3)
-                    meta_cols[0].write(f"**Keywords:** {', '.join(article.get('keywords_found', [])[:6])}")
-                    meta_cols[1].write(f"**Text length:** {article.get('text_length', 0)} chars")
-                    meta_cols[2].write(f"**BBox:** {article.get('bbox', [])}")
+                    keywords = article.get('keywords_found', [])[:6]
+                    meta_cols[0].write(f"**🏷️ Keywords:** {', '.join(keywords)}")
+                    meta_cols[1].write(f"**📝 Text length:** {article.get('text_length', 0)} chars")
+                    meta_cols[2].write(f"**📐 BBox:** {article.get('bbox', [])}")
                     
                     # Show crop if available
                     if article.get("crop_path") and Path(article["crop_path"]).exists():
-                        st.image(str(article["crop_path"]), caption="Article Crop", use_container_width=True)
+                        st.image(str(article["crop_path"]), caption="🖼️ Article Crop", use_container_width=True)
                     
                     # Summary
-                    st.markdown("**AI Summary**")
+                    st.markdown("**🤖 AI Summary**")
                     summary_text = article.get("summary", "No summary available")
-                    st.write(summary_text)
+                    if summary_text:
+                        st.write(summary_text)
+                    else:
+                        st.info("No summary could be generated for this article.")
                     
                     # Full text
-                    with st.expander("View full OCR text"):
+                    with st.expander("📄 View full OCR text"):
                         full_text = article.get("full_text", "No text extracted")
-                        st.text_area("Full text", full_text, height=200, key=f"text_{article['page']}_{article['article_id']}")
+                        if full_text:
+                            st.text_area("Full extracted text", full_text, height=200, key=f"text_{article['page']}_{article['article_id']}")
+                        else:
+                            st.info("No text could be extracted from this article.")
         else:
-            st.info("No education-related articles found. Try adjusting the confidence threshold or upload a different PDF.")
+            st.info("🔍 No education-related articles found.")
+            st.info("Try:")
+            st.info("• Adjusting the confidence threshold")
+            st.info("• Using a different PDF")
+            st.info("• Checking if the PDF contains education-related content")
 
         # Download results
-        st.subheader("Download Results")
+        st.subheader("💾 Download Results")
         json_bytes = json.dumps(results, indent=2, ensure_ascii=False).encode("utf-8")
         filename = f"education_articles_{st.session_state.uploaded_file_name or 'results'}.json"
         st.download_button(
-            "Download JSON Results", 
+            "📥 Download JSON Results", 
             data=json_bytes, 
             file_name=filename, 
             mime="application/json"
         )
         
         # Reset button
-        if st.button("Process Another PDF", key="reset_btn"):
+        if st.button("🔄 Process Another PDF", key="reset_btn"):
             # Clear all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
