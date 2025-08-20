@@ -11,9 +11,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from extractor import NewspaperEducationExtractor
 from config import CONFIDENCE_THRESHOLD, KEYWORD_MIN_MATCH, NUM_WORKERS
 
-st.set_page_config(page_title="Newspaper Education Extractor (Semantic)", layout="wide")
+st.set_page_config(page_title="Newspaper Education Extractor", layout="wide")
 st.title("Newspaper Education Extractor with Semantic Features")
-st.caption("Upload a newspaper PDF to detect, OCR, and summarize education-related articles using semantic analysis and sshleifer/distilbart-cnn-12-6 summarization.")
+st.caption("Upload a newspaper PDF to detect, OCR, and summarize education-related articles.")
 
 def main():
     with st.sidebar:
@@ -23,12 +23,25 @@ def main():
         workers = st.slider("Workers", 1, 8, value=int(NUM_WORKERS), step=1)
         save_crops = st.checkbox("Save cropped images", value=False)
         
-        st.info("🧠 Semantic filtering enabled for better accuracy")
-        st.info("📝 Using sshleifer/distilbart-cnn-12-6 for summarization")
+        st.info("🧠 Semantic filtering enabled")
+        st.info("📝 Using sshleifer/distilbart-cnn-12-6")
         
         run_button = st.button("Run Extraction", type="primary")
 
-    uploaded_pdf = st.file_uploader("Upload newspaper PDF", type=["pdf"]) 
+    # File uploader with size limit for Cloud Run
+    uploaded_pdf = st.file_uploader("Upload newspaper PDF", type=["pdf"])
+
+    # Add file size validation to prevent Axios errors
+    if uploaded_pdf is not None:
+        file_size_mb = uploaded_pdf.size / (1024 * 1024)
+        max_size_mb = 50  # 50MB limit for Cloud Run compatibility
+        
+        if file_size_mb > max_size_mb:
+            st.error(f"File too large ({file_size_mb:.1f}MB). Please upload a file smaller than {max_size_mb}MB.")
+            st.info("💡 Tip: Try compressing your PDF or splitting large files into smaller ones.")
+            st.stop()
+        else:
+            st.success(f"File uploaded successfully ({file_size_mb:.1f}MB)")
 
     if run_button:
         if not uploaded_pdf:
@@ -40,7 +53,7 @@ def main():
             tmp.write(uploaded_pdf.read())
             tmp_path = tmp.name
 
-        # Create extractor INSIDE the button handler
+        # Create extractor INSIDE button handler
         extractor = NewspaperEducationExtractor(
             min_keyword_matches=min_keywords,
             confidence_threshold=conf_threshold,
@@ -48,8 +61,13 @@ def main():
             save_crops=save_crops,
         )
 
-        with st.spinner("Processing PDF with semantic analysis... This may take a few minutes."):
-            results = extractor.process_newspaper(tmp_path)
+        with st.spinner("Processing PDF... This may take a few minutes."):
+            try:
+                results = extractor.process_newspaper(tmp_path)
+            except Exception as e:
+                st.error(f"Processing failed: {e}")
+                st.info("This might be due to file size or complexity. Try with a smaller PDF.")
+                st.stop()
 
         # Display summary
         stats = results.get("processing_stats", {})
@@ -89,21 +107,21 @@ def main():
                     meta_cols = st.columns(3)
                     meta_cols[0].write(f"**Keywords:** {', '.join(article.get('keywords_found', [])[:6])}")
                     meta_cols[1].write(f"**Text length:** {article.get('text_length', 0)} chars")
-                    meta_cols[2].write(f"**BBox:** {article.get('bbox', [])}")
+                    meta_cols.write(f"**BBox:** {article.get('bbox', [])}")
                     
                     # Show crop if available
                     if article.get("crop_path") and Path(article["crop_path"]).exists():
                         st.image(str(article["crop_path"]), caption="Article Crop", use_container_width=True)
                     
-                    # Summary (from sshleifer model)
-                    st.markdown("**AI Summary** (sshleifer/distilbart-cnn-12-6)")
+                    # Summary
+                    st.markdown("**AI Summary**")
                     st.write(article.get("summary", ""))
                     
                     # Full text
                     with st.expander("View full OCR text"):
                         st.text_area("Full text", article.get("full_text", ""), height=200, key=f"text_{i}")
         else:
-            st.info("No education-related articles found. The semantic filter may have filtered out irrelevant content.")
+            st.info("No education-related articles found.")
 
         # Download results
         st.subheader("Download Results")
@@ -111,15 +129,9 @@ def main():
         st.download_button(
             "Download JSON Results", 
             data=json_bytes, 
-            file_name=f"education_articles_semantic.json", 
+            file_name="education_articles.json", 
             mime="application/json"
         )
-        
-        # Performance info
-        with st.expander("ℹ️ Processing Details"):
-            st.write(f"**Semantic Analysis:** {'Enabled' if results.get('semantic_enabled', False) else 'Disabled'}")
-            st.write(f"**Summarization Model:** {results.get('summarization_model', 'N/A')}")
-            st.write(f"**Processing Timestamp:** {results.get('timestamp', 'N/A')}")
         
         # Clean up
         try:
