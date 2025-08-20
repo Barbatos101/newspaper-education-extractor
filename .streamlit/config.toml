@@ -1,22 +1,10 @@
 [server]
-# File upload limit optimized for Cloud Run (25MB max)
-maxUploadSize = 30
-
-# Disable WebSocket compression to prevent connection issues
-enableWebsocketCompression = false
-
-# Disable XSRF protection for Cloud Run compatibility
-enableXsrfProtection = false
-
-# Increase message size limit
-maxMessageSize = 200
-
-# Enable CORS for Cloud Run
+# Port will be set by Cloud Run via $PORT environment variable
+headless = true
 enableCORS = false
+enableXsrfProtection = false
+maxUploadSize = 25
 
 [browser]
-# Disable usage statistics collection
-gatherUsageStats = false
-
-# Server configuration for Cloud Run
 serverAddress = "0.0.0.0"
+gatherUsageStats = false

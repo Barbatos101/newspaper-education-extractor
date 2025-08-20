@@ -21,6 +21,10 @@ if st.query_params.get("health") == "check":
     st.stop()
 
 def main():
+    # Health check endpoint for Cloud Run
+    if st.query_params.get("healthz") is not None:
+        st.write("OK")
+        st.stop()
     # Initialize session state ONCE
     if "results" not in st.session_state:
         st.session_state.results = None
