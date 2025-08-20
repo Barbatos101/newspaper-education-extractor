@@ -1,2 +1,22 @@
 [server]
+# File upload limit (in MB) - adjust as needed for your PDFs
 maxUploadSize = 200
+
+# Disable WebSocket compression to prevent connection issues on Cloud Run
+enableWebsocketCompression = false
+
+# Disable XSRF protection for Cloud Run compatibility  
+enableXsrfProtection = false
+
+# Port configuration (optional - Cloud Run sets this automatically)
+# port = 8501
+
+# Enable CORS for Cloud Run
+enableCORS = false
+
+[browser]
+# Disable usage statistics collection
+gatherUsageStats = false
+
+# Prevent auto-reload in production
+serverAddress = "0.0.0.0"
