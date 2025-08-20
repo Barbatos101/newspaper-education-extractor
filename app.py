@@ -5,16 +5,13 @@ import os
 
 import streamlit as st
 
-
-st.set_page_config(page_title="Newspaper Education Extractor", layout="wide")
-if "processing" not in st.session_state:
-    st.session_state.processing = False
 # Set environment variables before importing other modules
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from extractor import NewspaperEducationExtractor
 from config import CONFIDENCE_THRESHOLD, KEYWORD_MIN_MATCH, NUM_WORKERS
 
+st.set_page_config(page_title="Newspaper Education Extractor (Semantic)", layout="wide")
 st.title("Newspaper Education Extractor with Semantic Features")
 st.caption("Upload a newspaper PDF to detect, OCR, and summarize education-related articles using semantic analysis and sshleifer/distilbart-cnn-12-6 summarization.")
 
@@ -33,20 +30,17 @@ def main():
 
     uploaded_pdf = st.file_uploader("Upload newspaper PDF", type=["pdf"]) 
 
-    if run_button and not st.session_state.processing:
-        st.session_state.processing = True
-        
-        with st.spinner("Processing PDF... This may take up to 10 minutes."):
-            results = extractor.process_newspaper(tmp_path)
-        
-        st.session_state.processing = False
+    if run_button:
+        if not uploaded_pdf:
+            st.warning("Please upload a PDF first.")
+            st.stop()
 
         # Write to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_pdf.read())
             tmp_path = tmp.name
 
-        # Create extractor
+        # Create extractor INSIDE the button handler
         extractor = NewspaperEducationExtractor(
             min_keyword_matches=min_keywords,
             confidence_threshold=conf_threshold,
@@ -72,16 +66,22 @@ def main():
             st.subheader(f"Education Articles ({len(articles)} found)")
             
             # Filtering options
-            keyword_filter = st.selectbox(
-                "Filter by keyword:",
-                ["All"] + sorted(set(kw for article in articles for kw in article.get('keywords_found', []))),
-                index=0
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                keyword_filter = st.selectbox(
+                    "Filter by keyword:",
+                    ["All"] + sorted(set(kw for article in articles for kw in article.get('keywords_found', []))),
+                    index=0
+                )
+            with col2:
+                min_confidence = st.slider("Minimum confidence", 0.0, 1.0, 0.0, 0.05)
             
             # Apply filters
             filtered_articles = articles
             if keyword_filter != "All":
                 filtered_articles = [a for a in articles if keyword_filter in a.get('keywords_found', [])]
+            if min_confidence > 0:
+                filtered_articles = [a for a in articles if a.get('confidence', 0) >= min_confidence]
             
             for i, article in enumerate(filtered_articles, 1):
                 with st.expander(f"{i}. Page {article['page']} • Article {article['article_id']} • conf={article['confidence']:.2f}"):
