@@ -16,6 +16,14 @@ st.title("Newspaper Education Extractor with Semantic Features")
 st.caption("Upload a newspaper PDF to detect, OCR, and summarize education-related articles.")
 
 def main():
+    # Initialize session state
+    if "processing" not in st.session_state:
+        st.session_state.processing = False
+    if "results" not in st.session_state:
+        st.session_state.results = None
+    if "uploaded_file_name" not in st.session_state:
+        st.session_state.uploaded_file_name = None
+
     with st.sidebar:
         st.header("Settings")
         conf_threshold = st.slider("YOLO confidence threshold", 0.3, 0.95, value=float(CONFIDENCE_THRESHOLD), step=0.01)
@@ -25,13 +33,11 @@ def main():
         
         st.info("🧠 Semantic filtering enabled")
         st.info("📝 Using sshleifer/distilbart-cnn-12-6")
-        
-        run_button = st.button("Run Extraction", type="primary")
 
-    # File uploader with size limit for Cloud Run
+    # File uploader with size limit
     uploaded_pdf = st.file_uploader("Upload newspaper PDF", type=["pdf"])
 
-    # Add file size validation to prevent Axios errors
+    # File size validation
     if uploaded_pdf is not None:
         file_size_mb = uploaded_pdf.size / (1024 * 1024)
         max_size_mb = 50  # 50MB limit for Cloud Run compatibility
@@ -39,21 +45,26 @@ def main():
         if file_size_mb > max_size_mb:
             st.error(f"File too large ({file_size_mb:.1f}MB). Please upload a file smaller than {max_size_mb}MB.")
             st.info("💡 Tip: Try compressing your PDF or splitting large files into smaller ones.")
-            st.stop()
+            return  # Early return instead of st.stop()
         else:
             st.success(f"File uploaded successfully ({file_size_mb:.1f}MB)")
+            st.session_state.uploaded_file_name = uploaded_pdf.name
 
-    if run_button:
-        if not uploaded_pdf:
-            st.warning("Please upload a PDF first.")
-            st.stop()
+    # Run extraction button with session state
+    run_extraction = st.button("Run Extraction", type="primary", disabled=st.session_state.processing)
 
+    if run_extraction and uploaded_pdf is not None:
+        st.session_state.processing = True
+        st.rerun()  # Trigger rerun to show processing state
+
+    # Processing logic
+    if st.session_state.processing and uploaded_pdf is not None:
         # Write to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_pdf.read())
             tmp_path = tmp.name
 
-        # Create extractor INSIDE button handler
+        # Create extractor
         extractor = NewspaperEducationExtractor(
             min_keyword_matches=min_keywords,
             confidence_threshold=conf_threshold,
@@ -61,14 +72,47 @@ def main():
             save_crops=save_crops,
         )
 
-        with st.spinner("Processing PDF... This may take a few minutes."):
+        # Processing with progress indicator
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        try:
+            status_text.text("Initializing extraction...")
+            progress_bar.progress(10)
+            
+            status_text.text("Processing PDF... This may take a few minutes.")
+            progress_bar.progress(30)
+            
+            results = extractor.process_newspaper(tmp_path)
+            
+            progress_bar.progress(100)
+            status_text.text("Processing complete!")
+            
+            # Store results in session state
+            st.session_state.results = results
+            st.session_state.processing = False
+            
+            # Clean up temp file
             try:
-                results = extractor.process_newspaper(tmp_path)
-            except Exception as e:
-                st.error(f"Processing failed: {e}")
-                st.info("This might be due to file size or complexity. Try with a smaller PDF.")
-                st.stop()
+                os.unlink(tmp_path)
+            except:
+                pass
+                
+            st.rerun()  # Trigger rerun to show results
+            
+        except Exception as e:
+            st.error(f"Processing failed: {e}")
+            st.info("This might be due to file size or complexity. Try with a smaller PDF.")
+            st.session_state.processing = False
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
 
+    # Display results if available
+    if st.session_state.results is not None:
+        results = st.session_state.results
+        
         # Display summary
         stats = results.get("processing_stats", {})
         st.subheader("Processing Summary")
@@ -106,7 +150,7 @@ def main():
                     # Metadata
                     meta_cols = st.columns(3)
                     meta_cols[0].write(f"**Keywords:** {', '.join(article.get('keywords_found', [])[:6])}")
-                    meta_cols[1].write(f"**Text length:** {article.get('text_length', 0)} chars")
+                    meta_cols[13].write(f"**Text length:** {article.get('text_length', 0)} chars")
                     meta_cols.write(f"**BBox:** {article.get('bbox', [])}")
                     
                     # Show crop if available
@@ -129,15 +173,16 @@ def main():
         st.download_button(
             "Download JSON Results", 
             data=json_bytes, 
-            file_name="education_articles.json", 
+            file_name=f"education_articles_{st.session_state.uploaded_file_name}.json", 
             mime="application/json"
         )
         
-        # Clean up
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
+        # Clear results button
+        if st.button("Process Another PDF"):
+            st.session_state.results = None
+            st.session_state.processing = False
+            st.session_state.uploaded_file_name = None
+            st.rerun()
 
 if __name__ == "__main__":
     main()
