@@ -147,12 +147,13 @@ def main():
             
             for i, article in enumerate(filtered_articles, 1):
                 with st.expander(f"{i}. Page {article['page']} • Article {article['article_id']} • conf={article['confidence']:.2f}"):
+                    
                     # Metadata
                     meta_cols = st.columns(3)
-                    meta_cols[0].write(f"**Keywords:** {', '.join(article.get('keywords_found', [])[:6])}")
-                    meta_cols[13].write(f"**Text length:** {article.get('text_length', 0)} chars")
+                    meta_cols.write(f"**Keywords:** {', '.join(article.get('keywords_found', [])[:6])}")
+                    meta_cols[1].write(f"**Text length:** {article.get('text_length', 0)} chars")
                     meta_cols.write(f"**BBox:** {article.get('bbox', [])}")
-                    
+
                     # Show crop if available
                     if article.get("crop_path") and Path(article["crop_path"]).exists():
                         st.image(str(article["crop_path"]), caption="Article Crop", use_container_width=True)
